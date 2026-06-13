@@ -25,6 +25,8 @@ certifi==2025.8.3
     #   httpcore
     #   httpx
     #   requests
+cffi==2.0.0 ; platform_python_implementation != 'PyPy'
+    # via cryptography
 charset-normalizer==3.4.3
     # via requests
 click==8.4.1
@@ -36,6 +38,8 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via
     #   click
     #   tqdm
+cryptography==49.0.0
+    # via pyjwt
 distro==1.9.0
     # via openai
 fastapi==0.136.3
@@ -103,7 +107,7 @@ markupsafe==3.0.3
     # via
     #   gradio
     #   jinja2
-mcp==1.19.0
+mcp==1.27.2
     # via openai-agents
 mdurl==0.1.2
     # via markdown-it-py
@@ -151,6 +155,8 @@ protobuf==6.33.6
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
 pydantic==2.13.4
     # via
     #   fastapi
@@ -168,6 +174,8 @@ pydub==0.25.1
     # via gradio
 pygments==2.19.2
     # via rich
+pyjwt==2.13.0
+    # via mcp
 pypdf==6.13.2
     # via alter-ego
 python-dateutil==2.9.0.post0
@@ -244,6 +252,7 @@ typing-extensions==4.15.0
     #   gradio
     #   gradio-client
     #   huggingface-hub
+    #   mcp
     #   openai
     #   openai-agents
     #   opentelemetry-api
@@ -259,6 +268,7 @@ typing-extensions==4.15.0
 typing-inspection==0.4.2
     # via
     #   fastapi
+    #   mcp
     #   pydantic
     #   pydantic-settings
 tzdata==2025.2
