@@ -9,9 +9,11 @@ implemented as a **distinct component that is demonstrably separate from the wor
 > constraint-handling **invisible to the worker**: the worker just thinks and calls tools;
 > the harness validates, evaluates, bounds, traces, and escalates around it.
 
-The demo worker is a career-conversation chatbot ("Alter Ego") that answers questions about
-a real person using their LinkedIn export + summary. It is **just one worker** — the harness
-knows nothing about careers, and a second worker can be swapped in with no harness changes.
+**Alter Ego** is the project: a harness for swappable "alter ego" workers, each an alter ego
+of a person built from its own curated content. The demo worker is the **LinkedIn Agent**, a
+career-conversation chatbot that answers questions about a real person using their LinkedIn
+export + summary. It is **just one worker** — the harness knows nothing about careers, and a
+second worker can be swapped in with no harness changes.
 
 ---
 
@@ -55,8 +57,11 @@ Visitor ─▶ [Material IN] ─▶ [Guardrails IN] ─▶ ┌─ RUN ENGINE (bo
 | `harness/engine.py` | Bounded run loop tying the pillars together |
 | `harness/worker.py` | `Worker` Protocol — the swappable interface |
 | `harness/store.py` | Checkpoint/run persistence for replay |
-| `workers/alter_ego.py` | Demo worker #1 (OpenAI Agents SDK) |
+| `harness/tools.py` | Harness-side tool implementations (run under Pillar A/B) |
+| `workers/linkedin_agent.py` | Demo worker #1 — **LinkedIn Agent** (OpenAI Agents SDK) |
 | `workers/echo_worker.py` | Demo worker #2 (portability proof) |
+| `workers/rogue_worker.py` | Demo worker #3 — ungrounded "hallucination bait" (forces checkpoint-fail → retry → escalate) |
+| `workers/source_loader.py` | Worker-side persona/knowledge loading (PDF/txt → grounding corpus) |
 | `app.py` | Gradio UI — thin client of `harness.engine.run()` |
 
 ---
@@ -64,16 +69,23 @@ Visitor ─▶ [Material IN] ─▶ [Guardrails IN] ─▶ ┌─ RUN ENGINE (bo
 ## 3. The Four Pillars
 
 ### Pillar A — Material Handling
-Clean, typed interfaces for moving material in and out of the worker.
+Clean, typed interfaces for moving material across the **user-facing boundary** in and out
+of the worker. "Material" here means per-turn user input and results — **not** a worker's
+persona/knowledge material, which is worker-owned configuration (see below).
 
 - `InboundMaterial` — normalized request (`text`, `history`, `metadata`).
-- `SourceMaterial` — the engineer's **real input** (`linkedin.pdf` via `pypdf` + `summary.txt`),
-  loaded, validated, and size-capped by the harness.
 - `OutboundMaterial` — structured result (`text`, `tool_events`, `checkpoints`, `alarms`,
   `escalated`) — also the replayable record.
 - Tool **result contract**: parseable output; errors returned as `{"ok": false, "error": …}`.
 - Engineering: per-tool timeouts, idempotency keys, large-result truncation before the
   context window overflows.
+
+**Persona/knowledge material is worker-owned, not harness-loaded.** The engineer's **real
+input** (`linkedin.pdf` via `pypdf` + `summary.txt`) is loaded, validated, and size-capped
+by the *worker* (`workers/source_loader.py`), which builds its own system prompt from it. The
+harness stays domain-agnostic: it knows nothing about PDFs or careers. For the `grounding`
+checkpoint, the harness simply *asks* the worker (via the optional `grounding_context()`
+capability) for a corpus to check against; workers that publish none get an auto-pass.
 
 ### Pillar B — Guardrails
 Declared boundary constraints in a single registry, in three phases plus hard limits.
@@ -115,11 +127,21 @@ pass-rate** (checkpoint pass-rate vs. a small test set).
 class Worker(Protocol):
     name: str
     def act(self, context: WorkerContext) -> WorkerReply: ...  # text + optional tool_calls
+    # optional capability:
+    def grounding_context(self) -> str | None: ...  # corpus the grounding checkpoint checks
 ```
 
-- **Worker #1** `workers/alter_ego.py` — OpenAI Agents SDK (`Agent` + `Runner`, gpt-4o-mini).
-- **Worker #2** `workers/echo_worker.py` — a different impl/model, dropped in via
+Each worker is an "alter ego" built from its own curated content. A worker owns its
+persona/knowledge material — it loads its own documents, builds its own system prompt, and
+(optionally) publishes a grounding corpus. `WorkerContext` carries only per-turn user
+material; the harness never loads or sees a worker's source documents.
+
+- **Worker #1** `workers/linkedin_agent.py` — **LinkedIn Agent**, OpenAI Agents SDK
+  (`Agent` + `Runner`, gpt-4o-mini); grounds on a LinkedIn export + summary.
+- **Worker #2** `workers/echo_worker.py` — a model-free impl, dropped in via
   `ACTIVE_WORKER` with **zero harness changes** (portability bonus).
+- **Worker #3** `workers/rogue_worker.py` — deliberately ungrounded; used to demo that a
+  failed `grounding` checkpoint forces retry-with-feedback then escalation.
 
 Because the pillars wrap this Protocol, constraint-handling is invisible to the worker.
 
@@ -194,13 +216,13 @@ Deployed on Hugging Face Spaces (Gradio 6.18.0, Python 3.12, free CPU).
 ## 10. Demo Script (5 min)
 
 1. On-topic question → grounded answer; `grounding` checkpoint passes (show trace span).
-2. Hallucination bait → `grounding` **fails** → worker retries with feedback → escalates.
-   *(Must: behavior changes on checkpoint feedback.)*
+2. Hallucination bait (swap to the **Rogue** worker) → `grounding` **fails** → worker retries
+   with feedback → escalates. *(Must: behavior changes on checkpoint feedback.)*
 3. Prompt-injection → input guardrail trips; deflection; `GUARDRAIL_TRIP` alarm.
 4. Unanswerable question / lead → human-in-the-loop escalation email.
 5. Show structured alarms (type/severity/context/action) and the reliability signals
    (p95, $/run, err%, eval pass-rate).
-6. **Swap `ACTIVE_WORKER` to worker #2** live → same harness, no changes. *(Bonus.)*
+6. **Swap `ACTIVE_WORKER` to the Echo worker** live → same harness, no changes. *(Bonus.)*
 7. **Replay** a stored `run_id` from the `grounding` checkpoint without re-calling the model.
    *(Should.)*
 

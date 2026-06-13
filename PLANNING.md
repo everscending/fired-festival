@@ -21,11 +21,12 @@ production agent needs:
 4. **Alarms** — structured, named alarm events (type + severity + context + recommended
    action) emitted when something goes wrong, plus the observability/traces around them.
 
-The **demo worker** is the *Alter Ego* career chatbot: it role-plays as a specific person
-and answers questions about their career using their LinkedIn export and a curated summary
-as its source of truth. When a visitor shares an email, or asks something the worker
-can't answer, the harness routes it to a human (owner email) — a **human-in-the-loop
-escalation path**, not just a side effect.
+*Alter Ego* is the project: a harness for swappable "alter ego" workers, each an alter ego of
+a person built from its own curated content. The **demo worker** is the *LinkedIn Agent*
+career chatbot: it role-plays as a specific person and answers questions about their career
+using their LinkedIn export and a curated summary as its source of truth. When a visitor
+shares an email, or asks something the worker can't answer, the harness routes it to a human
+(owner email) — a **human-in-the-loop escalation path**, not just a side effect.
 
 The harness governs the worker, and **the worker's behavior changes meaningfully based on
 guardrail and checkpoint feedback** (e.g. a failed grounding checkpoint forces the worker
@@ -130,18 +131,22 @@ Every Must/Should/Bonus from the challenge brief, mapped to where it is satisfie
 ```
 harness/
   __init__.py
+  config.py        # config + hard limits (turn/token/wall-clock/spend)
   engine.py        # bounded run loop: build context → call worker → run tools → checkpoint → repeat
-  material.py      # PILLAR: Material handling — typed in/out boundary objects
+  material.py      # PILLAR: Material handling — typed in/out boundary objects (user-facing)
   guardrails.py    # PILLAR: Guardrails — declared input/action/output checks
   checkpoints.py   # PILLAR: Checkpoints — named pass/fail gates + verdicts
   alarms.py        # PILLAR: Alarms — Alarm schema, AlarmType, Severity, sinks
   observability.py # OTel spans + run journal (the substrate alarms ride on)
   escalation.py    # human-in-the-loop policy + routing
-  worker.py        # Worker Protocol (the swappable interface)
+  worker.py        # Worker Protocol (the swappable interface) + grounding_context capability
   store.py         # checkpoint/run persistence for replay
-workers/
-  alter_ego.py     # demo worker #1 (OpenAI Agents SDK career chatbot)
-  echo_worker.py   # demo worker #2 (portability proof — different model/impl)
+  tools.py         # harness-side tool implementations (run under Pillar A/B)
+workers/                # each worker is an "alter ego" built from its own curated content
+  linkedin_agent.py  # demo worker #1 — LinkedIn Agent (OpenAI Agents SDK career chatbot)
+  echo_worker.py     # demo worker #2 (portability proof — model-free impl)
+  rogue_worker.py    # demo worker #3 — ungrounded; forces checkpoint-fail → retry → escalate
+  source_loader.py   # worker-side persona/knowledge loading (PDF/txt → grounding corpus)
 app.py             # Gradio UI; thin client that calls harness.engine.run(...)
 ```
 
@@ -151,19 +156,23 @@ boundary the rubric requires.
 
 ## Pillar 1 — Material Handling
 
-*Clean, typed interfaces for passing material in and out of the worker.* The harness owns
-these boundary types; the worker never sees raw HTTP/Gradio objects and the UI never sees
-raw worker output.
+*Clean, typed interfaces for passing material in and out of the worker, at the user-facing
+boundary.* The harness owns these boundary types; the worker never sees raw HTTP/Gradio
+objects and the UI never sees raw worker output. "Material" here means per-turn **user
+input** and results — **not** a worker's persona/knowledge material (see below).
 
 - **`InboundMaterial`** — normalized request entering the harness: `text`, `history`,
-  `source_documents`, `metadata`. Built by `material.py`, never by the worker.
-- **`SourceMaterial`** — the engineer's **real input** loaded at startup: `linkedin.pdf`
-  (extracted with `pypdf`) + `summary.txt`. This is the "real input from your own work"
-  the rubric requires. The harness loads, validates, and size-caps it; the worker receives
-  it as opaque context.
+  `metadata`. Built by `material.py`, never by the worker.
 - **`OutboundMaterial`** — structured result leaving the harness: `text`, `tool_events`,
   `checkpoints`, `alarms`, `escalated`. The UI renders this; it is also the replayable
   record.
+- **Persona/knowledge material is worker-owned, not harness-loaded.** The engineer's **real
+  input** (`linkedin.pdf` via `pypdf` + `summary.txt`) is loaded, validated, and size-capped
+  by the *worker* (`workers/source_loader.py` → `PersonaSource`), which builds its own system
+  prompt from it. This is the "real input from your own work" the rubric requires, while
+  keeping the harness domain-agnostic (it knows nothing about PDFs or careers). The harness
+  obtains a grounding corpus only by *asking* the worker via the optional
+  `grounding_context()` capability.
 - **Tool result contract** — every tool returns parseable data, and **errors come back as
   data** (`{"ok": false, "error": ...}`), never as exceptions that crash the loop.
 - **Engineering concerns** (per deck): per-tool timeouts, idempotency keys on side-effecting
@@ -224,7 +233,7 @@ class CheckpointResult:
     recommended_action: str # "retry" | "escalate" | "accept"
 
 CHECKPOINTS = [
-    Checkpoint(id="grounding",   criteria="Answer is supported by SourceMaterial; no invented facts."),
+    Checkpoint(id="grounding",   criteria="Answer is supported by the worker's grounding corpus; no invented facts."),
     Checkpoint(id="on_persona",  criteria="Response stays in persona and on the career domain."),
     Checkpoint(id="lead_capture",criteria="If visitor gave contact info, it was recorded/escalated."),
     Checkpoint(id="answerable",  criteria="If unanswerable from docs, the unknown-question path fired."),
@@ -325,14 +334,22 @@ The harness depends on a **Protocol**, never on a concrete model SDK:
 class Worker(Protocol):
     name: str
     def act(self, context: WorkerContext) -> WorkerReply: ...   # text + optional tool_calls
+    # optional capability:
+    def grounding_context(self) -> str | None: ...  # corpus the grounding checkpoint checks
 ```
 
-- **Worker #1 — `workers/alter_ego.py`** — wraps the OpenAI Agents SDK `Agent` + `Runner`
-  (gpt-4o-mini), with the persona + `SourceMaterial` in its instructions. The SDK is an
-  implementation detail *of this worker*.
-- **Worker #2 — `workers/echo_worker.py`** (or a different model, e.g. a raw OpenAI/Anthropic
-  chat client) — **dropped in at demo time with zero harness changes** to prove portability
-  (the Bonus). Selected via env var / dropdown.
+Each worker is an "alter ego" built from its own curated content, and **owns its
+persona/knowledge material** — it loads its own documents and builds its own system prompt;
+the harness never loads or sees them.
+
+- **Worker #1 — `workers/linkedin_agent.py`** (the **LinkedIn Agent**) — wraps the OpenAI
+  Agents SDK `Agent` + `Runner` (gpt-4o-mini), with the persona built from its own LinkedIn
+  export + summary. The SDK is an implementation detail *of this worker*.
+- **Worker #2 — `workers/echo_worker.py`** — a model-free impl, **dropped in at demo time
+  with zero harness changes** to prove portability (the Bonus). Selected via env var /
+  dropdown.
+- **Worker #3 — `workers/rogue_worker.py`** — deliberately ungrounded, used to demonstrate
+  that a failed `grounding` checkpoint forces retry-with-feedback then escalation (Must #2).
 - Because guardrails, checkpoints, material handling, and alarms wrap the `Worker`
   interface, **constraint-handling is invisible to the worker** — exactly the brief's
   closing principle.
@@ -351,15 +368,17 @@ The harness knows when to **stop and ask rather than guess**:
 
 ## Data Sources (the real demo input)
 
-The worker's source of truth — and the rubric's "real input from your own work" — is two
-files in the project root:
+The LinkedIn Agent's source of truth — and the rubric's "real input from your own work" — is
+two files in the project root:
 
-- `linkedin.pdf` — the engineer's LinkedIn export; text extracted at startup with `pypdf`.
+- `linkedin.pdf` — the engineer's LinkedIn export; text extracted with `pypdf`.
 - `summary.txt` — a curated background summary, read as plain text.
 
-The **harness** loads, validates (fail-fast), and size-caps these into `SourceMaterial`;
-the worker consumes them as opaque context embedded in its system prompt (no vector
-store/RAG given the small size).
+The **worker** (via `workers/source_loader.py` → `PersonaSource`) loads, validates
+(fail-fast), and size-caps these, then embeds them in its own system prompt and publishes a
+grounding corpus (no vector store/RAG given the small size). The **harness** never loads or
+sees these files — keeping it domain-agnostic. Other "alter ego" workers bring their own
+curated content the same way.
 
 ## Configuration & Secrets
 
@@ -450,8 +469,8 @@ installs from it. Regenerate on every dependency change.
 
 - Reframed from "agent" to "harness" per the rubric; domain (career chatbot) kept as the
   swappable demo worker.
-- Worker #1 = OpenAI Agents SDK (gpt-4o-mini); worker #2 = a second impl for the portability
-  bonus.
+- Worker #1 = LinkedIn Agent (OpenAI Agents SDK, gpt-4o-mini); worker #2 = Echo (model-free)
+  for the portability bonus; worker #3 = Rogue (ungrounded) for the checkpoint-feedback demo.
 - Pillars implemented as four distinct modules under `harness/`, separate from `workers/`.
 
 **Still to confirm:**
