@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>LinkedIn Agent — How It Works</title>
+        <style>
+            :root {
+                --bg: #07080c;
+                --bg2: #0d1018;
+                --card: #161b26;
+                --card-border: #2a3140;
+                --text: #f7f9fc;
+                --muted: #aab3c5;
+                --visitor: #7c9cff;
+                --ui: #5ac8e8;
+                --app: #b88cff;
+                --agent: #4a9eff;
+                --mail: #5ac17d;
+                --glow: rgba(74, 158, 255, 0.35);
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                background: radial-gradient(
+                    ellipse at top,
+                    var(--bg2),
+                    var(--bg) 70%
+                );
+                color: var(--text);
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    Helvetica, Arial, sans-serif;
+                min-height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 3vh 4vw;
+            }
+            .wrap {
+                width: 100%;
+                max-width: 1500px;
+            }
+
+            header {
+                text-align: center;
+                margin-bottom: 4vh;
+            }
+            h1 {
+                font-size: clamp(2rem, 4.5vw, 3.4rem);
+                font-weight: 800;
+                letter-spacing: -0.02em;
+            }
+            header p {
+                color: var(--muted);
+                margin-top: 12px;
+                font-size: clamp(1rem, 1.6vw, 1.35rem);
+            }
+
+            /* Horizontal flow */
+            .flow {
+                display: flex;
+                align-items: stretch;
+                justify-content: center;
+                gap: 0;
+                flex-wrap: nowrap;
+            }
+            .step {
+                display: flex;
+                align-items: center;
+                flex: 1 1 0;
+                min-width: 0;
+            }
+            .step:last-child {
+                flex: 0 0 auto;
+            }
+
+            .card {
+                background: var(--card);
+                border: 2px solid var(--c, var(--card-border));
+                border-radius: 20px;
+                padding: clamp(16px, 2vw, 28px) clamp(12px, 1.6vw, 22px);
+                text-align: center;
+                width: 100%;
+                position: relative;
+                box-shadow: 0 0 0 0 transparent;
+                transition:
+                    transform 0.2s ease,
+                    box-shadow 0.2s ease;
+            }
+            .card:hover {
+                transform: translateY(-6px);
+                box-shadow: 0 18px 40px -12px var(--c, var(--glow));
+            }
+
+            .num {
+                position: absolute;
+                top: -16px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 34px;
+                height: 34px;
+                border-radius: 50%;
+                background: var(--c, var(--agent));
+                color: #07080c;
+                font-weight: 800;
+                font-size: 1.05rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 0 16px var(--c, var(--glow));
+            }
+            .icon {
+                font-size: clamp(2.2rem, 4vw, 3.4rem);
+                line-height: 1;
+            }
+            .name {
+                font-weight: 800;
+                font-size: clamp(1.05rem, 1.7vw, 1.55rem);
+                margin-top: 10px;
+            }
+            .desc {
+                color: var(--muted);
+                font-size: clamp(0.82rem, 1.15vw, 1.02rem);
+                margin-top: 8px;
+                line-height: 1.45;
+            }
+            .tag {
+                display: inline-block;
+                margin-top: 12px;
+                padding: 4px 12px;
+                border-radius: 999px;
+                font-size: clamp(0.68rem, 0.95vw, 0.82rem);
+                font-weight: 700;
+                background: color-mix(in srgb, var(--c) 18%, transparent);
+                color: var(--c);
+                border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+            }
+
+            /* Connector */
+            .conn {
+                flex: 0 0 clamp(28px, 3vw, 64px);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+            }
+            .conn .line {
+                width: 100%;
+                height: 3px;
+                background: linear-gradient(90deg, var(--from), var(--to));
+                position: relative;
+                border-radius: 2px;
+            }
+            .conn .line::after {
+                content: "";
+                position: absolute;
+                right: -2px;
+                top: 50%;
+                transform: translateY(-50%);
+                border-top: 7px solid transparent;
+                border-bottom: 7px solid transparent;
+                border-left: 11px solid var(--to);
+            }
+            .conn .clbl {
+                position: absolute;
+                top: -26px;
+                left: 50%;
+                transform: translateX(-50%);
+                color: var(--muted);
+                font-size: clamp(0.7rem, 1vw, 0.85rem);
+                white-space: nowrap;
+                font-weight: 600;
+            }
+
+            /* moving pulse */
+            .pulse {
+                position: absolute;
+                top: 50%;
+                left: 0;
+                transform: translateY(-50%);
+                width: 9px;
+                height: 9px;
+                border-radius: 50%;
+                background: #fff;
+                box-shadow: 0 0 12px #fff;
+                animation: travel 2.6s linear infinite;
+            }
+            @keyframes travel {
+                from {
+                    left: 0;
+                    opacity: 0;
+                }
+                10% {
+                    opacity: 1;
+                }
+                90% {
+                    opacity: 1;
+                }
+                to {
+                    left: 100%;
+                    opacity: 0;
+                }
+            }
+
+            .v {
+                --c: var(--visitor);
+            }
+            .u {
+                --c: var(--ui);
+            }
+            .a {
+                --c: var(--app);
+            }
+            .g {
+                --c: var(--agent);
+            }
+            .m {
+                --c: var(--mail);
+            }
+            .g .card {
+                box-shadow: 0 0 36px -8px var(--glow);
+            }
+
+            footer {
+                text-align: center;
+                color: var(--muted);
+                margin-top: 5vh;
+                font-size: clamp(0.8rem, 1.1vw, 1rem);
+            }
+            footer b {
+                color: var(--text);
+            }
+            .stack {
+                color: var(--muted);
+                margin-top: 6px;
+                font-size: clamp(0.72rem, 1vw, 0.9rem);
+            }
+
+            @media (max-width: 900px) {
+                .flow {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .step {
+                    flex-direction: column;
+                }
+                .step:last-child {
+                    flex: 1 1 0;
+                }
+                .conn {
+                    flex: 0 0 auto;
+                    height: 46px;
+                    width: 100%;
+                }
+                .conn .line {
+                    width: 3px;
+                    height: 100%;
+                    background: linear-gradient(180deg, var(--from), var(--to));
+                }
+                .conn .line::after {
+                    right: 50%;
+                    top: auto;
+                    bottom: -2px;
+                    transform: translateX(50%);
+                    border-left: 7px solid transparent;
+                    border-right: 7px solid transparent;
+                    border-top: 11px solid var(--to);
+                    border-bottom: 0;
+                }
+                .conn .clbl {
+                    top: 50%;
+                    left: 56%;
+                    transform: translateY(-50%);
+                }
+                .pulse {
+                    top: 0;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    animation: travelV 2.6s linear infinite;
+                }
+                @keyframes travelV {
+                    from {
+                        top: 0;
+                        opacity: 0;
+                    }
+                    10% {
+                        opacity: 1;
+                    }
+                    90% {
+                        opacity: 1;
+                    }
+                    to {
+                        top: 100%;
+                        opacity: 0;
+                    }
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <header>
+                <h1>Meet the Digital Doppleganger</h1>
+                <p>
+                    A chatbot that answers as <b>you</b> — and quietly hands you
+                    every lead.
+                </p>
+            </header>
+
+            <div class="flow">
+                <!-- 1 Visitor -->
+                <div class="step v">
+                    <div class="card">
+                        <div class="num">1</div>
+                        <div class="icon">🙋</div>
+                        <div class="name">Visitor</div>
+                        <div class="desc">
+                            Asks about your data (career history, services
+                            offered, etc)
+                        </div>
+                        <span class="tag">asks a question</span>
+                    </div>
+                    <div
+                        class="conn"
+                        style="--from: var(--visitor); --to: var(--ui)"
+                    >
+                        <span class="clbl">chats</span>
+                        <div class="line"><span class="pulse"></span></div>
+                    </div>
+                </div>
+
+                <!-- 2 Gradio UI -->
+                <div class="step u">
+                    <div class="card">
+                        <div class="num">2</div>
+                        <div class="icon">💬</div>
+                        <div class="name">Gradio Chat</div>
+                        <div class="desc">
+                            The web chat window. Remembers the conversation.
+                        </div>
+                        <span class="tag">the interface</span>
+                    </div>
+                    <div
+                        class="conn"
+                        style="--from: var(--ui); --to: var(--app)"
+                    >
+                        <span class="clbl">sends</span>
+                        <div class="line"><span class="pulse"></span></div>
+                    </div>
+                </div>
+
+                <!-- 3 Python App -->
+                <div class="step a">
+                    <div class="card">
+                        <div class="num">3</div>
+                        <div class="icon">📄</div>
+                        <div class="name">Your Data</div>
+                        <div class="desc">
+                            Loads your data(LinkedIn profile info, other curated
+                            content) as the source of truth
+                        </div>
+                        <span class="tag">the knowledge</span>
+                    </div>
+                    <div
+                        class="conn"
+                        style="--from: var(--app); --to: var(--agent)"
+                    >
+                        <span class="clbl">feeds</span>
+                        <div class="line"><span class="pulse"></span></div>
+                    </div>
+                </div>
+
+                <!-- 4 Agent -->
+                <div class="step g">
+                    <div class="card">
+                        <div class="num">4</div>
+                        <div class="icon">🤖</div>
+                        <div class="name">AI Agent</div>
+                        <div class="desc">
+                            Reasons &amp; replies in your voice — keeps
+                            conversation related to your data
+                        </div>
+                        <span class="tag">the brain</span>
+                    </div>
+                    <div
+                        class="conn"
+                        style="--from: var(--agent); --to: var(--mail)"
+                    >
+                        <span class="clbl">flags leads</span>
+                        <div class="line"><span class="pulse"></span></div>
+                    </div>
+                </div>
+
+                <!-- 5 Email owner -->
+                <div class="step m">
+                    <div class="card">
+                        <div class="num">5</div>
+                        <div class="icon">📬</div>
+                        <div class="name">You Get an Email</div>
+                        <div class="desc">
+                            New lead captured, or a question it couldn't answer
+                        </div>
+                        <span class="tag">the payoff</span>
+                    </div>
+                </div>
+            </div>
+
+            <footer>
+                <div><b>Built on:</b> Python · Gradio · Mailtrap</div>
+                <div class="stack">Deployed on Hugging Face Spaces</div>
+            </footer>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Digital Doppleganger — System Architecture</title>
+        <style>
+            :root {
+                --bg: #07080c;
+                --bg2: #0d1018;
+                --panel: #121723;
+                --panel2: #0f141e;
+                --border: #283142;
+                --text: #f4f7fc;
+                --muted: #97a1b5;
+                --client: #7c9cff;
+                --app: #b88cff;
+                --agent: #4a9eff;
+                --tools: #f0a04b;
+                --guard: #e15a4a;
+                --obs: #5ac17d;
+                --ext: #5ac8e8;
+                --line: #3a4456;
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background: radial-gradient(
+                    ellipse at top,
+                    var(--bg2),
+                    var(--bg) 75%
+                );
+                color: var(--text);
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    Helvetica, Arial, sans-serif;
+                padding: 36px 32px 56px;
+                -webkit-font-smoothing: antialiased;
+            }
+            .wrap {
+                max-width: 1400px;
+                margin: 0 auto;
+            }
+
+            header {
+                text-align: center;
+                margin-bottom: 34px;
+            }
+            h1 {
+                font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+                font-weight: 800;
+                letter-spacing: -0.02em;
+            }
+            header p {
+                color: var(--muted);
+                margin-top: 10px;
+                font-size: clamp(0.95rem, 1.4vw, 1.2rem);
+            }
+
+            /* Layered tiers */
+            .tier {
+                border: 1px solid var(--border);
+                border-radius: 18px;
+                background: linear-gradient(
+                    180deg,
+                    rgba(255, 255, 255, 0.015),
+                    rgba(0, 0, 0, 0.15)
+                );
+                padding: 18px 20px 22px;
+                margin-bottom: 26px;
+                position: relative;
+            }
+            .tier-label {
+                position: absolute;
+                top: -11px;
+                left: 22px;
+                background: var(--bg2);
+                padding: 2px 12px;
+                border-radius: 999px;
+                font-size: 0.72rem;
+                font-weight: 700;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--muted);
+                border: 1px solid var(--border);
+            }
+            .tier.deploy {
+                border-style: dashed;
+            }
+            .tier.deploy .tier-label {
+                color: var(--obs);
+                border-color: var(--obs);
+            }
+
+            .row {
+                display: flex;
+                gap: 18px;
+                flex-wrap: wrap;
+                align-items: stretch;
+            }
+            .col {
+                flex: 1 1 0;
+                min-width: 220px;
+                display: flex;
+            }
+
+            .box {
+                width: 100%;
+                background: var(--panel);
+                border: 1.5px solid var(--c, var(--border));
+                border-left: 4px solid var(--c, var(--border));
+                border-radius: 14px;
+                padding: 16px 18px;
+            }
+            .box .head {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .box .ic {
+                font-size: 1.5rem;
+                line-height: 1;
+            }
+            .box .t {
+                font-weight: 800;
+                font-size: 1.06rem;
+            }
+            .box .st {
+                color: var(--muted);
+                font-size: 0.78rem;
+                font-weight: 600;
+            }
+            .box ul {
+                list-style: none;
+                margin-top: 12px;
+            }
+            .box li {
+                font-size: 0.86rem;
+                color: #d2d8e4;
+                padding: 4px 0 4px 16px;
+                position: relative;
+                line-height: 1.4;
+            }
+            .box li::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 10px;
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--c, var(--border));
+            }
+            .box code {
+                background: rgba(255, 255, 255, 0.07);
+                padding: 1px 6px;
+                border-radius: 5px;
+                font-size: 0.8rem;
+                color: #e8ecf4;
+            }
+
+            .client {
+                --c: var(--client);
+            }
+            .app {
+                --c: var(--app);
+            }
+            .agent {
+                --c: var(--agent);
+            }
+            .tools {
+                --c: var(--tools);
+            }
+            .guard {
+                --c: var(--guard);
+            }
+            .obs {
+                --c: var(--obs);
+            }
+            .ext {
+                --c: var(--ext);
+            }
+
+            /* Agent core highlight */
+            .agent-core {
+                background: var(--panel2);
+                box-shadow: 0 0 34px -10px var(--agent);
+            }
+
+            /* vertical connector between tiers */
+            .between {
+                display: flex;
+                justify-content: center;
+                margin: -16px 0 10px;
+            }
+            .between .pill {
+                background: var(--bg2);
+                border: 1px solid var(--border);
+                color: var(--muted);
+                padding: 4px 14px;
+                border-radius: 999px;
+                font-size: 0.74rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .between .pill::before,
+            .between .pill::after {
+                content: "↕";
+                color: var(--line);
+            }
+
+            /* sub-grid inside agent runtime */
+            .subgrid {
+                display: grid;
+                grid-template-columns: 1.3fr 1fr 1fr 1fr;
+                gap: 16px;
+            }
+
+            /* legend */
+            .legend {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 14px 22px;
+                justify-content: center;
+                margin-top: 30px;
+            }
+            .legend span {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                color: var(--muted);
+                font-size: 0.82rem;
+            }
+            .dot {
+                width: 12px;
+                height: 12px;
+                border-radius: 3px;
+            }
+
+            footer {
+                text-align: center;
+                color: var(--muted);
+                margin-top: 26px;
+                font-size: 0.84rem;
+            }
+            footer b {
+                color: var(--text);
+            }
+
+            @media (max-width: 1000px) {
+                .subgrid {
+                    grid-template-columns: 1fr 1fr;
+                }
+            }
+            @media (max-width: 620px) {
+                .subgrid {
+                    grid-template-columns: 1fr;
+                }
+                .col {
+                    min-width: 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <header>
+                <h1>Digital Doppleganger — System Architecture</h1>
+                <p>
+                    Persona chatbot on the OpenAI Agents SDK · the four harness
+                    pillars in one runtime
+                </p>
+            </header>
+
+            <!-- TIER 1: CLIENT -->
+            <div class="tier">
+                <span class="tier-label">Client</span>
+                <div class="row">
+                    <div class="col client">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">🙋</span>
+                                <div>
+                                    <div class="t">Visitor (Browser)</div>
+                                    <div class="st">end user</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>
+                                    Asks questions about curated data(ie. career
+                                    history, services offered, etc)
+                                </li>
+                                <li>May share an email address</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col client">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">💬</span>
+                                <div>
+                                    <div class="t">Gradio Chat UI</div>
+                                    <div class="st">web front end</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>Renders the chat window</li>
+                                <li>Holds multi-turn conversation state</li>
+                                <li>Passes history into each request</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="between">
+                <span class="pill">HTTPS · chat messages + history</span>
+            </div>
+
+            <!-- TIER 2: APPLICATION RUNTIME -->
+            <div class="tier">
+                <span class="tier-label">Application Runtime · Python</span>
+
+                <div class="row" style="margin-bottom: 18px">
+                    <div class="col app">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">🐍</span>
+                                <div>
+                                    <div class="t">Python App</div>
+                                    <div class="st">orchestration</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>Boots Gradio + the agent on startup</li>
+                                <li>Loads curated content</li>
+                                <li>
+                                    Builds the system prompt (persona + docs, no
+                                    RAG)
+                                </li>
+                                <li>Reads secrets / API keys from env</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Agent runtime sub-tier (the 4 pillars) -->
+                <div class="subgrid">
+                    <!-- Pillar 1: Chat / Loop -->
+                    <div class="agent">
+                        <div class="box agent-core">
+                            <div class="head">
+                                <span class="ic">🔁</span>
+                                <div>
+                                    <div class="t">Chat / Loop</div>
+                                    <div class="st">Pillar 1 · the brain</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>SDK <code>Runner</code> drives the loop</li>
+                                <li>
+                                    Single <code>Agent</code> ·
+                                    <code>gpt-4o-mini</code>
+                                </li>
+                                <li>model → tool → model until done</li>
+                                <li>System prompt = persona + docs</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Pillar 2: Tools -->
+                    <div class="tools">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">🛠️</span>
+                                <div>
+                                    <div class="t">Tools</div>
+                                    <div class="st">Pillar 2 · act</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li><code>@function_tool</code></li>
+                                <li><code>record_user_details()</code></li>
+                                <li><code>record_unknown_question()</code></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Pillar 3: Guardrails -->
+                    <div class="guard">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">🛡️</span>
+                                <div>
+                                    <div class="t">Guardrails</div>
+                                    <div class="st">Pillar 3 · constrain</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>Inline lightweight checks</li>
+                                <li>On-topic only (prompt)</li>
+                                <li>No hallucinations / in persona</li>
+                                <li>Validate email · de-dup sends</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Pillar 4: Observability -->
+                    <div class="obs">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">📊</span>
+                                <div>
+                                    <div class="t">Observability</div>
+                                    <div class="st">Pillar 4 · record</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>SDK built-in tracing</li>
+                                <li>Log turns &amp; tool calls</li>
+                                <li>Metrics: leads · unknown Qs · refusals</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="between">
+                <span class="pill">outbound API calls</span>
+            </div>
+
+            <!-- TIER 3: EXTERNAL SERVICES -->
+            <div class="tier">
+                <span class="tier-label">External Services</span>
+                <div class="row">
+                    <div class="col ext">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">🧠</span>
+                                <div>
+                                    <div class="t">OpenAI API</div>
+                                    <div class="st">LLM inference</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>
+                                    Serves <code>gpt-4o-mini</code> completions
+                                </li>
+                                <li>Receives prompt + tool schemas</li>
+                                <li>Returns reasoning &amp; tool calls</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col obs">
+                        <div class="box">
+                            <div class="head">
+                                <span class="ic">📬</span>
+                                <div>
+                                    <div class="t">Mailtrap</div>
+                                    <div class="st">email delivery</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>Sends email to the owner</li>
+                                <li>
+                                    New lead captured (name · email · notes)
+                                </li>
+                                <li>Unanswered / unknown question</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TIER 4: DEPLOYMENT -->
+            <div class="tier deploy">
+                <span class="tier-label">Deployment</span>
+                <div class="row">
+                    <div class="col obs">
+                        <div class="box obs">
+                            <div class="head">
+                                <span class="ic">🤗</span>
+                                <div>
+                                    <div class="t">Hugging Face Spaces</div>
+                                    <div class="st">hosting</div>
+                                </div>
+                            </div>
+                            <ul>
+                                <li>
+                                    Hosts the Gradio app &amp; Python runtime
+                                </li>
+                                <li>Stores API keys as Space secrets</li>
+                                <li>Public URL for the live demo</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <span
+                    ><span class="dot" style="background: var(--client)"></span
+                    >Client</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--app)"></span>App
+                    / Orchestration</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--agent)"></span
+                    >Chat / Loop</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--tools)"></span
+                    >Tools</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--guard)"></span
+                    >Guardrails</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--obs)"></span
+                    >Observability / Infra</span
+                >
+                <span
+                    ><span class="dot" style="background: var(--ext)"></span
+                    >External Service</span
+                >
+            </div>
+
+            <footer>
+                <b>Stack:</b> Python · OpenAI Agents SDK · Gradio · Mailtrap ·
+                Hugging Face Spaces
+            </footer>
+        </div>
+    </body>
+</html>
