@@ -5,5 +5,5 @@ sdk: gradio
 sdk_version: 6.18.0
 python_version: "3.12"
 emoji: 🚀
-short_description: Alter Ego — a harness for swappable AI workers (LinkedIn Agent demo)
+short_description: Alter Ego — a harness for swappable AI personas
 ---
