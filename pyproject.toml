@@ -5,7 +5,7 @@ description = "Alter Ego / Career Conversation Chatbot"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "gradio>=6.18.0",
+    "gradio[mcp,oauth]>=6.18.0",
     "mailtrap>=2.6.0",
     "openai>=2.41.1",
     "openai-agents>=0.17.5",
